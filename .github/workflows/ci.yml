@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l . | grep -v '^gen/' || true)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -coverprofile=coverage.out ./...
+
+      - name: Coverage summary
+        run: go tool cover -func=coverage.out | tail -1 >> "$GITHUB_STEP_SUMMARY"
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12
+
+  demo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The demo sources disagree on purpose, so the CLI is expected to exit 1.
+      - name: Run the demo end to end
+        run: |
+          set +e
+          output=$(./scripts/demo.sh)
+          code=$?
+          echo "$output"
+          if [ "$code" -ne 1 ]; then
+            echo "expected exit 1 (findings), got $code"
+            exit 1
+          fi
+          echo "$output" | grep -q "AMOUNT_MISMATCH"
+
+  proto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Versions are pinned: they are recorded in the generated files, so a
+      # different toolchain would fail the diff for no real reason.
+      - name: Install the protobuf toolchain
+        env:
+          PROTOC_VERSION: "35.0"
+        run: |
+          curl -sSLo /tmp/protoc.zip \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip"
+          sudo unzip -q -o /tmp/protoc.zip -d /usr/local
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
+
+      # Generated code is committed; this proves it still matches the contract.
+      - name: Regenerate and diff
+        run: |
+          make proto
+          git diff --exit-code -- gen

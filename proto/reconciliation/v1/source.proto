@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package reconciliation.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/zxc0zxc0zxc/reconciliation/gen/reconciliation/v1;reconciliationv1";
+
+// RecordSource is the only thing a system must implement to be reconciled.
+service RecordSource {
+  rpc GetRecords(GetRecordsRequest) returns (GetRecordsResponse);
+}
+
+message GetRecordsRequest {
+  // Half-open window [from, to).
+  google.protobuf.Timestamp from = 1;
+  google.protobuf.Timestamp to = 2;
+  // Opaque cursor from a previous response; empty for the first page.
+  string cursor = 3;
+  int32 page_size = 4;
+}
+
+message GetRecordsResponse {
+  repeated Record records = 1;
+  string next_cursor = 2;
+  // Instant the snapshot was taken. Both sides of a rule must agree on it.
+  google.protobuf.Timestamp as_of = 3;
+}
+
+message Record {
+  // Native identifier in the source system.
+  string id = 1;
+  // Correlation key shared across sources. The engine never guesses it.
+  string key = 2;
+  // Minor units. Never a float.
+  int64 amount = 3;
+  string currency = 4;
+  google.protobuf.Timestamp occurred_at = 5;
+  string status = 6;
+  // Anything source-specific that a rule may want to look at.
+  map<string, string> attributes = 7;
+}

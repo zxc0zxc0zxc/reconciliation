@@ -1,0 +1,27 @@
+sources:
+  ledger:
+    address: localhost:9101
+    timeout: 30s
+    page_size: 500
+  provider:
+    address: localhost:9102
+    timeout: 30s
+    page_size: 500
+
+rules:
+  - name: ledger-vs-provider
+    sides: [ledger, provider]
+    mode: item
+    amount_tolerance: 0
+    in_flight_window: 5m
+    require_status_match: true
+    thresholds:
+      medium: 1000
+      high: 100000
+      critical: 10000000
+
+  - name: ledger-vs-provider-totals
+    sides: [ledger, provider]
+    mode: balance
+    amount_tolerance: 100
+    in_flight_window: 5m
